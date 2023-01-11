@@ -2,12 +2,22 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
+
+
+
+
+
+
 #Initialize the app from Flask
 app=Flask(__name__)
 #Configure sqlite database
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///cobra.db'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///cars.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
+
+
+
+
 #Define the database model
 class Car(db.Model):
     car_id = db.Column(db.Integer, primary_key=True)
@@ -37,7 +47,7 @@ class Showroom(db.Model):
 class Manager(db.Model):
     manager_id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(80), nullable=False)
-    salary = db.Column(db.Integer, nullable=False)
+    password=db.Column(db.String(80), nullable=False)
     def __repr__(self) -> str: 
         return '<Manager %r>' % self.manager_id
 
@@ -52,24 +62,23 @@ class Sales(db.Model):
     def __repr__(self) -> str:
         return '<Sales %r>' % self.sales_id
 
+with app.app_context():
+    db.create_all()
+    print("Tables updated successfully!")
+
+
+
+
 
 #Define structure of the app
 @app.route('/')
 def login():
-    car=Car( car_id =1, model='Toyota', year=2019, color='Red', price=10000, quantity=10)
-    db.session.add(car)
-    db.session.commit()
     return render_template('login.html')
 
 @app.route('/home')
 def home():
     #return render_template('add_removeCar.html')
     return "Home Page"
-
-@app.route('/add_removeCar')
-def add_removeCar():
-    #return render_template('add_removeCar.html')
-    return "Add Or Remove Car Page"
 
 @app.route('/sell')
 def sell():
@@ -80,6 +89,13 @@ def sell():
 def viewdb():
     #return render_template('viewdb.html')
     return "View DB Page"
+
+@app.route('/crud_db')
+def viewdb():
+    #return render_template('viewdb.html')
+    return "Setup DB Page"
+
+
 
 if __name__ == "__main__":
     app.run(debug =True)
