@@ -1,24 +1,24 @@
 #!/usr/bin/env python3
-from flask import Flask, render_template, redirect, request, session
+from flask import Flask,session,g,render_template, request, redirect, url_for, flash
+import os
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import update
+from flask.cli import with_appcontext
 from datetime import datetime
+import sqlalchemy
+from sqlalchemy.ext.declarative import declarative_base
+from inflection import camelize
+import sys
 
+app = Flask(__name__)
 
-
-
-
-#Initialize the app from Flask
-app=Flask(__name__)
-#Configure sqlite database
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///cars.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-db = SQLAlchemy(app)
 
+db =SQLAlchemy(app)
+# Base = declarative_base()
 
+app.secret_key=os.urandom(24)
 
-
-#Define the database model
 class Car(db.Model):
     car_id = db.Column(db.Integer, primary_key=True)
     model = db.Column(db.String(80), nullable=False)
@@ -26,9 +26,7 @@ class Car(db.Model):
     color = db.Column(db.String(80), nullable=False)
     price = db.Column(db.Integer, nullable=False)
     quantity = db.Column(db.Integer, nullable=False)
-    sales = db.relationship('Sales', backref='car', lazy=True)
-
-    def __repr__(self) -> str:
+    def _repr_(self):
         return '<Car %r>' % self.car_id
 
 class Customer(db.Model):
@@ -36,102 +34,139 @@ class Customer(db.Model):
     name = db.Column(db.String(80), nullable=False)
     address = db.Column(db.String(80), nullable=False)
     phone = db.Column(db.Integer, nullable=False)
-    sales = db.relationship('Sales', backref='customer', lazy=True)
-    def __repr__(self) -> str:
+    def _repr_(self):
         return '<Customer %r>' % self.customer_id
 
 class Showroom(db.Model):
     showroom_id = db.Column(db.Integer, primary_key=True)
     address = db.Column(db.String(80), nullable=False)
-    manager_id = db.Column(db.Integer, db.ForeignKey('manager.manager_id'), nullable=False)
-    sales = db.relationship('Sales', backref='showroom', lazy=True)
-    def __repr__(self) -> str: 
+    manager_id = db.Column(db.Integer(), nullable=False)
+    def _repr_(self): 
         return '<Showroom %r>' % self.showroom_id
 
 class Manager(db.Model):
     manager_id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(80), nullable=False)
-    password=db.Column(db.String(80), nullable=False)
-    showroom = db.relationship('Showroom', backref='manager', lazy=True)
-    def __repr__(self) -> str: 
+    salary = db.Column(db.Integer, nullable=False)
+    showroom_id = db.Column(db.Integer, nullable=False)
+    def _repr_(self): 
         return '<Manager %r>' % self.manager_id
 
 
 class Sales(db.Model):
     sales_id = db.Column(db.Integer, primary_key=True)
-    car_id = db.Column(db.Integer, db.ForeignKey('car.car_id'), nullable=False)
-    customer_id = db.Column(db.Integer, db.ForeignKey('customer.customer_id'), nullable=False)
-    showroom_id = db.Column(db.Integer, db.ForeignKey('showroom.showroom_id'), nullable=False)
-    date = db.Column(db.DateTime(80), default=datetime.utcnow)
-    amount = db.Column(db.Integer, nullable=False)
-    def __repr__(self) -> str:
+    car_id = db.Column(db.Integer, nullable=False)
+    customer_id = db.Column(db.Integer, nullable=False)
+    showroom_id = db.Column(db.Integer, nullable=False)
+    date = db.Column(db.DateTime(), default=datetime.utcnow, nullable=False)
+    price = db.Column(db.Integer, nullable=False)
+    def _repr_(self):
         return '<Sales %r>' % self.sales_id
+
 
 with app.app_context():
     db.create_all()
-    print("Tables updated successfully!")
+    print("Created all tables successfully")
 
 
+@app.before_request
+def before_request():
+    g.username = None
+    if 'username' in session:
+        g.username = session['username']
 
+@app.route("/dropsession")
+def dropsession():
+    session.pop('username', None)
+    return redirect(url_for('index'))
 
+@app.route("/", methods=['GET', 'POST'])
+def index():
+    if request.method == 'POST':
+        if request.form['username'] == 'admin': 
+            session.pop('username', None)
+            if request.form['password'] == 'password':
+                session['username'] = request.form['username']
+                return redirect(url_for('home'))
 
-#Define structure of the app
-@app.route('/', methods=['GET', 'POST'])
-def login():
-    #Add operation
-    if(request.method=='POST'):
-        car_id=request.form['car_id']
-        model=request.form['model']
-        year=request.form['year']
-        color=request.form['color']
-        price=request.form['price']
-        quantity=request.form['quantity']
-        new_car=Car(car_id=car_id, model=model, year=year, color=color, price=price, quantity=quantity)
-        db.session.add(new_car)
-        db.session.commit()
-        return redirect('/')
-    carsdb=Car.query.all()
-    return render_template('login.html', carsdb=carsdb)
+    return render_template('index.html')
 
-@app.route('/home', methods=['GET', 'POST'])
+@app.route("/home/base", methods=['GET', 'POST'])
+def base():
+    if g.username:
+        return render_template('base.html',username=session['username'])
+    return redirect(url_for('index'))
+
+@app.route("/home", methods=['GET', 'POST'])
 def home():
-    #Update operation
-    if(request.method=='POST'):
-        carid=request.form['car_id']
-        quanTity=request.form['quantity']
-        db.session.query(Car).filter_by(car_id=carid).update({'quantity':Car.quantity+quanTity})
-        db.session.commit()
-        return redirect('/')
-    return "Home Page"
+    if g.username:
+        if request.method == 'POST':
+            form_type = request.form['form_type']
+            if form_type == 'view_database':
+                return redirect(url_for('viewdb_fun'))
+            elif form_type == 'crud':
+                return redirect(url_for('crud'))
+            else:
+                # Handle unexpected form type
+                pass
+        else:
+            return render_template('home.html',username=session['username'])
+    else:
+        return redirect(url_for('index'))
 
-@app.route('/sell', methods=['GET', 'POST'])
-def sell():
-   # sell operation
-   if(request.method=='POST'):
-        carid=request.form['car_id']
-        db.session.query(Car).filter_by(car_id=carid).update({'quantity':Car.quantity-1})
-        db.session.commit()
-        return redirect('/')
-   return "Sell Page"
+@app.route("/home/viewdb", methods=['GET', 'POST'])
+def viewdb_fun():
+    if g.username:
+        tablename = ""
+        if request.method == 'POST':
+            tablename = request.form['tablename']
+            return redirect(url_for('viewdb_fun_table', tablename=tablename, username=session['username']))
+        return render_template('viewdb.html', tablename=tablename,username=session['username'])
+    return redirect(url_for('index'))
 
-@app.route('/view_db', methods=['GET', 'POST'])
-def viewdb():
-    #Delete operation
-    if(request.method=='POST'):
-        carid=request.form['car_id']
-        car_to_delete=Car.query.get(carid)
-        db.session.delete(car_to_delete)
-        db.session.commit()
-        return redirect('/')
-    return "View DB Page"
+@app.route("/home/viewdb/<tablename>", methods=['GET'])
+def viewdb_fun_table(tablename):
+    if g.username:
+        table = db.engine.execute(f'SELECT * FROM {tablename}')
+        return render_template('viewdb.html', tablename=table,username=session['username'],displayname=tablename)
+    return redirect(url_for('index'))
 
-@app.route('/crud_db')
+@app.route("/home/<tablename>/create", methods=['GET', 'POST'])
+def create_record(tablename):
+    if g.username:
+        table_class = getattr(sys.modules[__name__], tablename.capitalize())
+        if request.method == 'POST':
+            data = request.form.to_dict()
+            new_record = table_class(**data) 
+            db.session.add(new_record)
+            db.session.commit()
+            return redirect(url_for('viewdb_fun_table', tablename=tablename, username=session['username']))
+        columns = table_class.__table__.columns.keys()
+        return render_template('create_record.html', tablename=tablename, columns=columns,username=session['username'])
+    return redirect(url_for('index'))
+
+@app.route("/home/<tablename>/delete/<int:id>", methods=['GET', 'POST','DELETE'])
+def delete_record(tablename,id):
+    if g.username:
+        id = request.form.get('id')
+        print("*****************************************")
+        # print(**tablename)
+        print(tablename,type(tablename))
+        table_class = getattr(sys.modules[__name__], tablename.capitalize())
+        record = table_class.query.get(id)
+        db.session.delete(record)
+        db.session.commit()
+        return redirect(url_for('viewdb_fun_table', tablename=tablename, username=session['username']))
+    return redirect(url_for('index'))
+
+
+@app.route("/home/crud")
 def crud():
-    #return render_template('viewdb.html')
-
-    return "Setup DB Page"
+    if g.username:
+        return render_template('crud.html',username=session['username'])
+    return redirect(url_for('index'))
 
 
 
 if __name__ == "__main__":
-    app.run(debug =True)
+    app.run(debug=True)
